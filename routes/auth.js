@@ -174,20 +174,20 @@ router.post("/forgot-password", async (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ message: "Email is required" });
 
+    // Find the user
     const user = await User.findOne({ email });
     if (!user) return res.status(400).json({ message: "User not found" });
 
-    // 🔹 Generate OTP
+    // Generate OTP (optional)
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 min
 
-    // 🔹 Generate password reset token
-    const rawToken = crypto.randomBytes(20).toString("hex"); // raw
+    // Generate password reset token
+    const rawToken = crypto.randomBytes(20).toString("hex"); // raw token
     const hashedToken = crypto
       .createHash("sha256")
       .update(rawToken)
-      .digest("hex"); // hashed
-
+      .digest("hex");
     const passwordResetExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
     // Save to DB
@@ -197,21 +197,29 @@ router.post("/forgot-password", async (req, res) => {
     user.passwordResetExpiry = passwordResetExpiry;
     await user.save();
 
-    // 🔹 Send reset email
+    // Construct frontend reset link
     const frontendUrl = process.env.FRONTEND_URL;
+    if (!frontendUrl) {
+      console.error("❌ FRONTEND_URL is not set in environment variables");
+      return res.status(500).json({ message: "Server misconfiguration" });
+    }
     const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
 
+    // Send reset email
     const emailSent = await sendResetMail(user.email, resetLink);
 
-    // Log tokens for debugging
+    // Log for debugging
     console.log("📌 Forgot Password Debug:");
     console.log("User email:", email);
     console.log("OTP:", otp, "Expires at:", otpExpiry);
     console.log("Raw token (email link):", rawToken);
     console.log("Hashed token (DB):", hashedToken);
     console.log("Token expiry:", passwordResetExpiry);
+    console.log("Reset link:", resetLink);
+    console.log("Email sent status:", emailSent);
 
     if (!emailSent) {
+      console.warn(`⚠️ RESET LINK (dev mode): ${resetLink}`);
       return res.status(500).json({
         message: "Failed to send reset email. Check your email configuration.",
       });
